@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vault Dashboard</title><link rel="stylesheet" href="/style.css"></head><body><main>
+<h1>Cloud File Vault</h1><p class="sub"><span class="dot" id="dot"></span><span id="state">Connecting…</span></p>
+<div class="grid">
+<div class="card"><small>Running time</small><b id="uptime">–</b></div>
+<div class="card"><small>Files stored</small><b id="files">–</b></div>
+<div class="card"><small>Total size</small><b id="stored">–</b></div>
+<div class="card"><small>Active uploads</small><b id="uploads">–</b></div>
+<div class="card"><small>Active downloads</small><b id="downloads">–</b></div>
+<div class="card"><small>Web data received</small><b id="in">–</b></div>
+</div>
+<div class="card"><div class="row"><span>Outbound traffic since restart (estimate)</span><span id="bw">–</span></div><div class="bar"><i id="bwbar"></i></div></div>
+<div id="active"></div>
+</main><script>
+const $=id=>document.getElementById(id);
+const size=n=>{const u=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<4){n/=1024;i++}return n.toFixed(i?2:0)+' '+u[i]};
+const time=s=>`${Math.floor(s/86400)}d ${Math.floor(s%86400/3600)}h ${Math.floor(s%3600/60)}m ${s%60}s`;
+async function tick(){
+ try{
+  const d=await (await fetch('/api/status',{cache:'no-store'})).json();
+  $('dot').className='dot'+(d.online?' on':'');$('state').textContent=d.online?'Bot online':'Bot starting / offline';
+  $('uptime').textContent=time(d.uptime);$('files').textContent=d.files;$('stored').textContent=size(d.stored);
+  $('uploads').textContent=d.uploads;$('downloads').textContent=d.downloads;$('in').textContent=size(d.in);
+  $('bw').textContent=size(d.out)+(d.limit?' / '+size(d.limit):'');
+  $('bwbar').style.width=(d.limit?Math.min(100,d.out*100/d.limit):0)+'%';
+  $('active').innerHTML=d.active.map(a=>`<div class="card"><div class="row"><span>Upload · ${size(a.size)}</span><span>${a.percent}% · ${size(a.speed)}/s</span></div><div class="bar"><i style="width:${a.percent}%"></i></div></div>`).join('');
+ }catch(e){$('dot').className='dot';$('state').textContent='Server unreachable'}
+ setTimeout(tick,2000);
+}
+tick();
+</script></body></html>
