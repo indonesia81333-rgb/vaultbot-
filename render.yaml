@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: tg-file-vault
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /health
+    envVars:
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: CHANNEL_ID
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: ALLOWED_UPLOADERS
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: MAX_FILE_GB
+        value: "10"
+      - key: BANDWIDTH_LIMIT_GB
+        value: "5"
+      - key: KEEP_ALIVE
+        value: "0"
