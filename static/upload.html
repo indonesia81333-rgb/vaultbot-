@@ -1,0 +1,77 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Upload File</title><link rel="stylesheet" href="/style.css"></head><body><main>
+<h1>Upload a File</h1><p class="sub">Streams straight into Telegram. Keep this page open until it finishes.</p>
+<label class="card drop" id="drop" style="display:block"><input type="file" id="file" hidden><b>📤 Tap or drop a file</b></label>
+<div class="card" id="panel" hidden>
+ <div class="row"><span id="name"></span><span id="pct">0%</span></div>
+ <div class="bar"><i id="bar"></i></div>
+ <div class="row"><span id="amount"></span><span id="speed"></span><span id="eta"></span></div>
+ <p id="msg" class="sub" style="margin:12px 0 0"></p>
+ <button class="btn ghost" id="pause">Pause</button><button class="btn ghost" id="cancel">Cancel</button>
+</div>
+<div class="card" id="result" hidden>
+ <b>✅ Upload complete</b><code id="key"></code><button class="btn" data-copy="key">Copy key</button>
+ <code id="link"></code><button class="btn" data-copy="link">Copy download link</button>
+ <code id="bot"></code><button class="btn" data-copy="bot">Copy bot link</button>
+ <button class="btn ghost" onclick="location.reload()">Upload another</button>
+</div>
+</main><script>
+const $=id=>document.getElementById(id);
+const token=location.hash.slice(1)||(()=>{try{return sessionStorage.getItem('t')}catch(e){return ''}})();
+try{if(token)sessionStorage.setItem('t',token)}catch(e){}
+history.replaceState(null,'',location.pathname);
+const size=n=>{const u=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<4){n/=1024;i++}return n.toFixed(i?2:0)+' '+u[i]};
+const dur=s=>s>=3600?`${s/3600|0}h ${s%3600/60|0}m`:`${s/60|0}m ${s%60|0}s`;
+let paused=false,cancelled=false,busy=false,xhr=null,samples=[];
+function show(done,total){
+ const now=Date.now();samples.push([now,done]);while(samples.length>2&&now-samples[0][0]>8000)samples.shift();
+ const sp=samples.length>1?Math.max(0,(done-samples[0][1])/((now-samples[0][0])/1000)):0;
+ const p=Math.min(100,done*100/total);
+ $('bar').style.width=p+'%';$('pct').textContent=p.toFixed(1)+'%';$('amount').textContent=size(done)+' / '+size(total);
+ $('speed').textContent=size(sp)+'/s';$('eta').textContent=sp?'ETA '+dur((total-done)/sp):'ETA …';
+}
+function send(method,url,body,progress){
+ return new Promise((ok,fail)=>{
+  const x=new XMLHttpRequest();xhr=x;x.open(method,url);x.setRequestHeader('Authorization','Bearer '+token);x.timeout=600000;
+  if(progress)x.upload.onprogress=e=>progress(e.loaded);
+  x.onload=()=>{let d=null;try{d=JSON.parse(x.responseText)}catch(e){}
+   if(x.status<300||(x.status===409&&d))ok(d);else fail({status:x.status,text:x.responseText})};
+  x.onerror=x.ontimeout=x.onabort=()=>fail({status:0,text:'Network problem'});
+  x.send(body);
+ });
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function upload(f){
+ if(busy)return;
+ if(!token){alert('Open this page using the link from /upload in the bot.');return}
+ busy=true;$('drop').hidden=true;$('panel').hidden=false;$('name').textContent=f.name;
+ try{
+  const s=await send('POST','/api/upload',JSON.stringify({name:f.name,size:f.size}));
+  const url='/api/upload/'+s.id;let state={received:0,done:false},errors=0;
+  window.sid=url;
+  while(!state.done&&!cancelled){
+   if(paused){samples=[];await sleep(400);continue}
+   const off=state.received;
+   try{
+    state=await send('PUT',url+'?offset='+off,f.slice(off,off+s.chunk),n=>show(off+n,f.size));
+    errors=0;$('msg').textContent='';show(state.received,f.size);
+   }catch(e){
+    if(cancelled)break;
+    if([400,401,404,413].includes(e.status))throw e;
+    if(++errors>20)throw e;
+    $('msg').textContent='Connection issue, retrying ('+errors+')…';await sleep(Math.min(errors*2000,15000));
+    try{state=await send('GET',url)}catch(x){if(x.status===404||x.status===401)throw x}
+   }
+  }
+  if(state.done){$('panel').hidden=true;$('result').hidden=false;for(const k of ['key','link','bot'])$(k).textContent=state[k]||''}
+ }catch(e){$('msg').textContent='❌ '+(e.text||'Upload failed');$('pause').hidden=true}
+}
+$('file').onchange=e=>e.target.files[0]&&upload(e.target.files[0]);
+const d=$('drop');
+d.ondragover=e=>{e.preventDefault();d.classList.add('over')};d.ondragleave=()=>d.classList.remove('over');
+d.ondrop=e=>{e.preventDefault();e.dataTransfer.files[0]&&upload(e.dataTransfer.files[0])};
+$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Resume':'Pause'};
+$('cancel').onclick=async()=>{cancelled=true;if(xhr)xhr.abort();if(window.sid)try{await send('DELETE',window.sid)}catch(e){}location.reload()};
+document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>navigator.clipboard.writeText($(b.dataset.copy).textContent).then(()=>{b.textContent='Copied ✓'}));
+window.onbeforeunload=()=>busy&&$('result').hidden&&!cancelled?true:undefined;
+</script></body></html>
